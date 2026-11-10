@@ -22,6 +22,13 @@ def get_status_channel(guild):
             return ch
     return None
 
+def get_ticket_category(guild):
+    # Kunci ke kategori pian: ── ── ── 🎫 ✦ TICKET ✦ ── ── ──
+    for cat in guild.categories:
+        if "TICKET" in cat.name.upper():
+            return cat
+    return None
+
 async def send_status_update(guild, number, username, user_id, paket, status_text, color):
     ch = get_status_channel(guild)
     if not ch: return
@@ -123,14 +130,15 @@ class OrderModal(discord.ui.Modal, title="Pesanan Robux"):
         ticket_counter += 1
         guild = interaction.guild
         overwrites = {guild.default_role: discord.PermissionOverwrite(read_messages=False), interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True), guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)}
-        channel = await guild.create_text_channel(name=f"ticket-{interaction.user.name}", overwrites=overwrites)
+        # === MASUK KE KATEGORI ── ── ── 🎫 ✦ TICKET ✦ ── ── ── ===
+        category = get_ticket_category(guild)
+        channel = await guild.create_text_channel(name=f"ticket-{interaction.user.name}", overwrites=overwrites, category=category)
         ticket_data[channel.id] = {"user_id": interaction.user.id, "username": interaction.user.name, "created_at": time.time(), "number": ticket_counter, "paket": self.paket.value}
         embed = discord.Embed(title=f"🎫 Ticket Baru - {interaction.user.name}", description=f"**Username Roblox:** {self.username.value}\n**Paket:** {self.paket.value}\n**Pembayaran:** {self.pembayaran.value}\n**Ticket #{ticket_counter}**\n\nSilahkan kirim bukti pembayaran QRIS disini ya 💗", color=0xff69b4)
         embed.set_image(url=QRIS_URL)
         await channel.send(f"{interaction.user.mention} Halo! Selamat datang di MIPI STORE! 🌸", embed=embed, view=CloseView())
         await channel.send("**📦 STATUS ORDER - Owner only:**", view=StatusView())
         await send_status_update(guild, ticket_counter, interaction.user.name, interaction.user.id, self.paket.value, "🆕 Ticket Baru Dibuat", 0xff69b4)
-        # === INI YANG BARU - LANGSUNG LOMPAT KE TICKET ===
         go_view = discord.ui.View()
         go_view.add_item(discord.ui.Button(label="🚀 BUKA TICKET SAYA", style=discord.ButtonStyle.link, url=f"https://discord.com/channels/{guild.id}/{channel.id}"))
         await interaction.response.send_message(f"✅ Ticket kamu sudah dibuat!\nPencet tombol dibawah untuk langsung masuk ke ticket kamu 👇\n👉 {channel.mention}", view=go_view, ephemeral=True)
