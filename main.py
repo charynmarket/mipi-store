@@ -68,27 +68,29 @@ class CommentModal(discord.ui.Modal, title="Komentar / Testimoni"):
 
 class StatusView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    async def check_owner(self, interaction):
-        if interaction.user.id != interaction.guild.owner_id:
-            await interaction.response.send_message("❌ Hanya **Owner** yang bisa update status!", ephemeral=True); return False
-        return True
     @discord.ui.button(label="⏳ Menunggu Pembayaran", style=discord.ButtonStyle.secondary, custom_id="status_waiting")
     async def waiting(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await self.check_owner(interaction): return
+        await interaction.response.defer()
+        if interaction.user.id != interaction.guild.owner_id:
+            await interaction.followup.send("❌ Hanya **Owner** yang bisa update status!", ephemeral=True); return
         data = ticket_data.get(interaction.channel.id, {})
-        await interaction.response.send_message("⏳ Status diubah: **Menunggu Pembayaran**", ephemeral=False)
+        await interaction.followup.send("⏳ Status diubah: **Menunggu Pembayaran**")
         await send_status_update(interaction.guild, data.get("number", "?"), data.get("username", interaction.user.name), data.get("user_id", interaction.user.id), data.get("paket", "ORDER ROBUX"), "⏳ Menunggu Pembayaran", 0xfee75c)
     @discord.ui.button(label="🔄 Diproses", style=discord.ButtonStyle.primary, custom_id="status_process")
     async def process(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await self.check_owner(interaction): return
+        await interaction.response.defer()
+        if interaction.user.id != interaction.guild.owner_id:
+            await interaction.followup.send("❌ Hanya **Owner** yang bisa update status!", ephemeral=True); return
         data = ticket_data.get(interaction.channel.id, {})
-        await interaction.response.send_message("🔄 Status diubah: **Sedang Diproses**", ephemeral=False)
+        await interaction.followup.send("🔄 Status diubah: **Sedang Diproses**")
         await send_status_update(interaction.guild, data.get("number", "?"), data.get("username", interaction.user.name), data.get("user_id", interaction.user.id), data.get("paket", "ORDER ROBUX"), "🔄 Sedang Diproses", 0x5865f2)
     @discord.ui.button(label="✅ Selesai", style=discord.ButtonStyle.success, custom_id="status_done")
     async def done(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await self.check_owner(interaction): return
+        await interaction.response.defer()
+        if interaction.user.id != interaction.guild.owner_id:
+            await interaction.followup.send("❌ Hanya **Owner** yang bisa update status!", ephemeral=True); return
         data = ticket_data.get(interaction.channel.id, {})
-        await interaction.response.send_message("✅ Status diubah: **Selesai** - Robux sudah masuk!", ephemeral=False)
+        await interaction.followup.send("✅ Status diubah: **Selesai** - Robux sudah masuk!")
         await send_status_update(interaction.guild, data.get("number", "?"), data.get("username", interaction.user.name), data.get("user_id", interaction.user.id), data.get("paket", "ORDER ROBUX"), "✅ Selesai / Done", 0x57f287)
 
 class CloseView(discord.ui.View):
