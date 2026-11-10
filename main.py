@@ -63,6 +63,4 @@ async def close(interaction: discord.Interaction):
 @bot.tree.command(name="ping", description="Cek bot MIPI online atau tidak")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"Pong! 🏓 MIPI STORE online Wal! {round(bot.latency*1000)}ms")
-
-# GANTI INI DENGAN TOKEN MIPI STORE PIAN YANG 1 ITU
-bot.run(“MTU2OTU3MjE3NTExMzg3OTY3NA.GU3VM8.CEvKaxhqM__Z1FYmtfYUgEzg6oRKNIktteWt-g”)
+bot.run(os.getenv("DISCORD_TOKEN"))
