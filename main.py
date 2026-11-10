@@ -1,8 +1,9 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import os
 import time
 import io
+import html
 from datetime import datetime
 
 intents = discord.Intents.default()
@@ -20,7 +21,10 @@ user_ratings = {}
 
 def get_status_channel(guild):
     for ch in guild.text_channels:
-        if ch.name == "order-status":
+        if ch.name == "📦┆・order-status":
+            return ch
+    for ch in guild.text_channels:
+        if "order-status" in ch.name.lower():
             return ch
     return None
 
@@ -38,6 +42,12 @@ def get_vouch_channel(guild):
         if "vouch" in ch.name.lower():
             return ch
     return None
+
+def make_html_transcript(number, messages, username, paket, duration):
+    rows = ""
+    for m in messages:
+        rows += f"""<div style="margin:6px 0;padding:8px;background:#2b2d31;border-radius:8px;"><b style="color:#fff;">{html.escape(str(m['author']))}</b> <span style="color:#949ba4;font-size:12px;">{m['time']}</span><br><span style="color:#dbdee1;">{html.escape(m['content'] or '(gambar / embed)')}</span></div>"""
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket #{number} Transcript - MIPI STORE</title></head><body style="background:#1e1f22;font-family:sans-serif;padding:20px;"><h2 style="color:white;">MIPI STORE - Ticket #{number}</h2><p style="color:#949ba4;">Created by {html.escape(username)} | Subject: {html.escape(paket)} | Duration: {duration} minutes | {len(messages)} messages</p>{rows}<p style="color:#949ba4;margin-top:20px;">MIPI STORE • Auto-Generated Transcript</p></body></html>"""
 
 async def send_status_update(guild, number, username, user_id, paket, status_text, color):
     ch = get_status_channel(guild)
@@ -61,6 +71,46 @@ async def send_vouch(guild, user, paket, stars, komentar):
     embed.set_thumbnail(url=avatar_kecil)
     embed.set_footer(text="MIPI STORE • Terima kasih sudah order 💗")
     await ch.send(embed=embed)
+
+async def do_auto_close(guild, channel, data, reason="auto-closed due to inactivity • inactive for 15 minutes"):
+    number = data["number"]; user_id = data["user_id"]; paket = data.get("paket", "ORDER ROBUX")
+    created = data["created_at"]; duration = int((time.time() - created)//60)
+    if duration < 1: duration = 1
+    messages = []
+    try:
+        async for m in channel.history(limit=200, oldest_first=True):
+            messages.append({"author": str(m.author), "time": m.created_at.strftime("%H:%M"), "content": m.content})
+    except: pass
+    status_ch = get_status_channel(guild)
+    if status_ch:
+        embed1 = discord.Embed(title="Ticket Auto-Closed", description=f"**#{number} {reason}**\n**Ticket ID**\n{number}", color=0xfee75c)
+        embed1.set_footer(text=datetime.now().strftime("%B %d, %Y at %I:%M %p"))
+        await status_ch.send(embed=embed1)
+        html_text = make_html_transcript(number, messages, data.get("username","User"), paket, duration)
+        file = discord.File(io.BytesIO(html_text.encode()), filename=f"ticket-{number}-auto-transcript.html")
+        embed2 = discord.Embed(title="Auto-Generated Transcript (Auto-Closed)", description=f"Transcript automatically generated for auto-closed ticket #{number}\n\n**Ticket**\nTicket #{number}\nCreated by <@{user_id}>\n{len(messages)} messages\n\n**Generation**\nDuration: {duration} minutes\nStatus: Auto-Closed -> Auto-Transcript\n\n**Subject**\n{paket}", color=0x5865f2)
+        embed2.set_footer(text=datetime.now().strftime("%B %d, %Y at %I:%M %p"))
+        await status_ch.send(embed=embed2, file=file)
+    try:
+        user = await bot.fetch_user(user_id)
+        embed = discord.Embed(title="Rate Your Experience", description=f"Hi {user.name}! Your support ticket has been resolved.\nPlease rate your experience by clicking a star below.\n\n**Ticket #{number} in 🛒 ORDER ROBUX**\n**Resolved in**\n{duration} minutes\n\n**Closed by**\nMIPI STORE (Auto-Close)", color=0x2b2d31)
+        await user.send(embed=embed, view=RatingView(number))
+    except: pass
+    if channel.id in ticket_data:
+        del ticket_data[channel.id]
+    try: await channel.delete()
+    except: pass
+
+@tasks.loop(minutes=1)
+async def check_inactive():
+    now = time.time()
+    for channel_id, data in list(ticket_data.items()):
+        last = data.get("last_activity", data["created_at"])
+        if now - last > 15*60:
+            ch = bot.get_channel(channel_id)
+            if not ch:
+                del ticket_data[channel_id]; continue
+            await do_auto_close(ch.guild, ch, data)
 
 class RatingView(discord.ui.View):
     def __init__(self, ticket_number):
@@ -96,19 +146,14 @@ class CommentModal(discord.ui.Modal, title="Komentar / Testimoni"):
         paket = "ORDER ROBUX"
         for d in ticket_data.values():
             if d.get("number") == self.ticket_number:
-                paket = d.get("paket", paket)
-                break
+                paket = d.get("paket", paket); break
         try:
             guild = None
             for g in bot.guilds:
                 ch = get_vouch_channel(g)
-                if ch:
-                    guild = g
-                    break
-            if guild:
-                await send_vouch(guild, interaction.user, paket, stars, self.komentar.value)
-        except Exception as e:
-            print(f"Gagal vouch: {e}")
+                if ch: guild = g; break
+            if guild: await send_vouch(guild, interaction.user, paket, stars, self.komentar.value)
+        except Exception as e: print(f"Gagal vouch: {e}")
         await interaction.response.send_message(f"Terima kasih komentarnya! 💗\n> {self.komentar.value}\n\nTestimoni kamu sudah muncul di **#⭐┆・vouch**! 🎉\nRating: {'⭐'*stars} ({stars}/5)", ephemeral=True)
 
 class StatusView(discord.ui.View):
@@ -119,6 +164,7 @@ class StatusView(discord.ui.View):
         if interaction.user.id != interaction.guild.owner_id:
             await interaction.followup.send("❌ Hanya **Owner** yang bisa update status!", ephemeral=True); return
         data = ticket_data.get(interaction.channel.id, {})
+        if data: data["last_activity"] = time.time()
         await interaction.followup.send("⏳ Status diubah: **Menunggu Pembayaran**")
         await send_status_update(interaction.guild, data.get("number", "?"), data.get("username", interaction.user.name), data.get("user_id", interaction.user.id), data.get("paket", "ORDER ROBUX"), "⏳ Menunggu Pembayaran", 0xfee75c)
     @discord.ui.button(label="🔄 Diproses", style=discord.ButtonStyle.primary, custom_id="status_process")
@@ -127,6 +173,7 @@ class StatusView(discord.ui.View):
         if interaction.user.id != interaction.guild.owner_id:
             await interaction.followup.send("❌ Hanya **Owner** yang bisa update status!", ephemeral=True); return
         data = ticket_data.get(interaction.channel.id, {})
+        if data: data["last_activity"] = time.time()
         await interaction.followup.send("🔄 Status diubah: **Sedang Diproses**")
         await send_status_update(interaction.guild, data.get("number", "?"), data.get("username", interaction.user.name), data.get("user_id", interaction.user.id), data.get("paket", "ORDER ROBUX"), "🔄 Sedang Diproses", 0x5865f2)
     @discord.ui.button(label="✅ Selesai", style=discord.ButtonStyle.success, custom_id="status_done")
@@ -135,6 +182,7 @@ class StatusView(discord.ui.View):
         if interaction.user.id != interaction.guild.owner_id:
             await interaction.followup.send("❌ Hanya **Owner** yang bisa update status!", ephemeral=True); return
         data = ticket_data.get(interaction.channel.id, {})
+        if data: data["last_activity"] = time.time()
         await interaction.followup.send("✅ Status diubah: **Selesai** - Robux sudah masuk!")
         await send_status_update(interaction.guild, data.get("number", "?"), data.get("username", interaction.user.name), data.get("user_id", interaction.user.id), data.get("paket", "ORDER ROBUX"), "✅ Selesai / Done", 0x57f287)
 
@@ -147,29 +195,9 @@ class CloseView(discord.ui.View):
             await interaction.followup.send("❌ Hanya **Owner** yang bisa menutup ticket ini!", ephemeral=True); return
         channel = interaction.channel; data = ticket_data.get(channel.id)
         if not data:
-            await interaction.followup.send("Ticket ditutup...")
-            await channel.delete(); return
-        user_id = data["user_id"]; created = data["created_at"]; number = data["number"]; paket = data.get("paket", "ORDER ROBUX")
-        resolved_min = int((time.time() - created) // 60)
-        if resolved_min < 1: resolved_min = 1
+            await interaction.followup.send("Ticket ditutup..."); await channel.delete(); return
         await interaction.followup.send(f"Ticket ditutup oleh {interaction.user.mention}. Membuat transcript...")
-        try:
-            messages = []
-            async for m in channel.history(limit=200, oldest_first=True):
-                messages.append(f"[{m.created_at.strftime('%H:%M')}] {m.author}: {m.content}")
-            transcript_text = "\n".join(messages) if messages else "Tidak ada pesan"
-            file = discord.File(io.BytesIO(transcript_text.encode()), filename=f"ticket-{number}-transcript.txt")
-            status_ch = get_status_channel(interaction.guild)
-            if status_ch:
-                embed = discord.Embed(title="Auto-Generated Transcript (Auto-Closed)", description=f"Transcript automatically generated for auto-closed ticket #{number}\n\n**Ticket**\nTicket #{number}\nCreated by <@{user_id}>\n{len(messages)} messages\n\n**Generation**\nDuration: {resolved_min} minutes\nStatus: Closed -> Transcript\n\n**Subject**\n{paket}", color=0x2b2d31)
-                await status_ch.send(embed=embed, file=file)
-        except Exception as e: print(f"Gagal transcript: {e}")
-        try:
-            user = await bot.fetch_user(user_id)
-            embed = discord.Embed(title="Rate Your Experience", description=f"Hi {user.name}! Your support ticket has been resolved.\nPlease rate your experience by clicking a star below.\n\n**Ticket #{number} in 🛒 ORDER ROBUX**\n**Resolved in**\n{resolved_min} minutes\n\n**Closed by**\n{interaction.user.name}", color=0x2b2d31)
-            await user.send(embed=embed, view=RatingView(number))
-        except Exception as e: print(f"Gagal DM: {e}")
-        import asyncio; await asyncio.sleep(3); await channel.delete()
+        await do_auto_close(interaction.guild, channel, data, reason="closed by owner")
 
 class OrderModal(discord.ui.Modal, title="Pesanan Robux"):
     username = discord.ui.TextInput(label="Username", placeholder="UsernameRoblox", required=True)
@@ -182,7 +210,7 @@ class OrderModal(discord.ui.Modal, title="Pesanan Robux"):
         overwrites = {guild.default_role: discord.PermissionOverwrite(read_messages=False), interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True), guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)}
         category = get_ticket_category(guild)
         channel = await guild.create_text_channel(name=f"ticket-{interaction.user.name}", overwrites=overwrites, category=category)
-        ticket_data[channel.id] = {"user_id": interaction.user.id, "username": interaction.user.name, "created_at": time.time(), "number": ticket_counter, "paket": self.paket.value}
+        ticket_data[channel.id] = {"user_id": interaction.user.id, "username": interaction.user.name, "created_at": time.time(), "last_activity": time.time(), "number": ticket_counter, "paket": self.paket.value}
         embed = discord.Embed(title=f"🎫 Ticket Baru - {interaction.user.name}", description=f"**Username Roblox:** {self.username.value}\n**Paket:** {self.paket.value}\n**Pembayaran:** {self.pembayaran.value}\n**Ticket #{ticket_counter}**\n\nSilahkan kirim bukti pembayaran QRIS disini ya 💗", color=0xff69b4)
         embed.set_image(url=QRIS_URL)
         await channel.send(f"{interaction.user.mention} Halo! Selamat datang di MIPI STORE! 🌸", embed=embed, view=CloseView())
@@ -202,12 +230,17 @@ class OrderView(discord.ui.View):
         await interaction.response.send_modal(OrderModal())
 
 @bot.event
+async def on_message(message):
+    if message.author.bot: return
+    if message.channel.id in ticket_data:
+        ticket_data[message.channel.id]["last_activity"] = time.time()
+    await bot.process_commands(message)
+
+@bot.event
 async def on_ready():
     print(f"Login {bot.user}")
-    bot.add_view(OrderView())
-    bot.add_view(CloseView())
-    bot.add_view(StatusView())
-    bot.add_view(RatingView(0))
+    bot.add_view(OrderView()); bot.add_view(CloseView()); bot.add_view(StatusView()); bot.add_view(RatingView(0))
+    if not check_inactive.is_running(): check_inactive.start()
     await bot.tree.sync()
 
 @bot.tree.command(name="ticket", description="Tampilkan panel order MIPI STORE")
