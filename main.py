@@ -115,7 +115,7 @@ class StatusView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="⏳ Menunggu Pembayaran", style=discord.ButtonStyle.secondary, custom_id="status_waiting")
     async def waiting(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         if interaction.user.id != interaction.guild.owner_id:
             await interaction.followup.send("❌ Hanya **Owner** yang bisa update status!", ephemeral=True); return
         data = ticket_data.get(interaction.channel.id, {})
@@ -123,7 +123,7 @@ class StatusView(discord.ui.View):
         await send_status_update(interaction.guild, data.get("number", "?"), data.get("username", interaction.user.name), data.get("user_id", interaction.user.id), data.get("paket", "ORDER ROBUX"), "⏳ Menunggu Pembayaran", 0xfee75c)
     @discord.ui.button(label="🔄 Diproses", style=discord.ButtonStyle.primary, custom_id="status_process")
     async def process(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         if interaction.user.id != interaction.guild.owner_id:
             await interaction.followup.send("❌ Hanya **Owner** yang bisa update status!", ephemeral=True); return
         data = ticket_data.get(interaction.channel.id, {})
@@ -131,7 +131,7 @@ class StatusView(discord.ui.View):
         await send_status_update(interaction.guild, data.get("number", "?"), data.get("username", interaction.user.name), data.get("user_id", interaction.user.id), data.get("paket", "ORDER ROBUX"), "🔄 Sedang Diproses", 0x5865f2)
     @discord.ui.button(label="✅ Selesai", style=discord.ButtonStyle.success, custom_id="status_done")
     async def done(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         if interaction.user.id != interaction.guild.owner_id:
             await interaction.followup.send("❌ Hanya **Owner** yang bisa update status!", ephemeral=True); return
         data = ticket_data.get(interaction.channel.id, {})
@@ -142,14 +142,17 @@ class CloseView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="🔒 CLOSE TICKET", style=discord.ButtonStyle.danger, custom_id="close_ticket")
     async def close_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
         if interaction.user.id != interaction.guild.owner_id:
-            await interaction.response.send_message("❌ Hanya **Owner** yang bisa menutup ticket ini!", ephemeral=True); return
+            await interaction.followup.send("❌ Hanya **Owner** yang bisa menutup ticket ini!", ephemeral=True); return
         channel = interaction.channel; data = ticket_data.get(channel.id)
-        if not data: await channel.delete(); return
+        if not data:
+            await interaction.followup.send("Ticket ditutup...")
+            await channel.delete(); return
         user_id = data["user_id"]; created = data["created_at"]; number = data["number"]; paket = data.get("paket", "ORDER ROBUX")
         resolved_min = int((time.time() - created) // 60)
         if resolved_min < 1: resolved_min = 1
-        await interaction.response.send_message(f"Ticket ditutup oleh {interaction.user.mention}. Membuat transcript...")
+        await interaction.followup.send(f"Ticket ditutup oleh {interaction.user.mention}. Membuat transcript...")
         try:
             messages = []
             async for m in channel.history(limit=200, oldest_first=True):
@@ -200,7 +203,12 @@ class OrderView(discord.ui.View):
 
 @bot.event
 async def on_ready():
-    print(f"Login {bot.user}"); await bot.tree.sync()
+    print(f"Login {bot.user}")
+    bot.add_view(OrderView())
+    bot.add_view(CloseView())
+    bot.add_view(StatusView())
+    bot.add_view(RatingView(0))
+    await bot.tree.sync()
 
 @bot.tree.command(name="ticket", description="Tampilkan panel order MIPI STORE")
 async def ticket(interaction: discord.Interaction):
