@@ -32,6 +32,9 @@ def get_ticket_category(guild):
 
 def get_vouch_channel(guild):
     for ch in guild.text_channels:
+        if ch.name == "⭐┆・vouch":
+            return ch
+    for ch in guild.text_channels:
         if "vouch" in ch.name.lower():
             return ch
     return None
@@ -51,7 +54,6 @@ async def send_vouch(guild, user, paket, stars, komentar):
     colors = {5: 0xffd700, 4: 0x57f287, 3: 0xfee75c, 2: 0xe67e22, 1: 0xed4245}
     color = colors.get(stars, 0xffd700)
     embed = discord.Embed(title="⭐ TESTIMONI PEMBELI — Mipi Store", description=f"👤 **Pembeli:** {user.mention}\n📦 **Produk:** {paket}\n⭐ **Rating:** {star_str} ({stars}/5)\n📅 **Tanggal:** {tanggal}\n\n💬 **Ulasan & Review:**\n> \"{komentar}\"", color=color)
-    # Foto profil kecil di kanan - Versi B
     try:
         avatar_kecil = user.display_avatar.replace(size=64).url
     except:
@@ -66,7 +68,7 @@ class RatingView(discord.ui.View):
     async def send_thanks(self, interaction, stars):
         user_ratings[interaction.user.id] = stars
         star_str = "⭐" * stars
-        embed = discord.Embed(title="Terima Kasih! 💗", description=f"Kamu memberi rating **{star_str} ({stars}/5)** untuk MIPI STORE!\n\nTerima kasih sudah order di Mipi Store! Ditunggu order berikutnya ya 🌸\n\n👇 **Pencet Add Comment dibawah biar testimoni kamu muncul di #⭐ • vouch!**", color=0xff69b4)
+        embed = discord.Embed(title="Terima Kasih! 💗", description=f"Kamu memberi rating **{star_str} ({stars}/5)** untuk MIPI STORE!\n\nTerima kasih sudah order di Mipi Store! Ditunggu order berikutnya ya 🌸\n\n👇 **Pencet Add Comment dibawah biar testimoni kamu muncul di #⭐┆・vouch!**", color=0xff69b4)
         await interaction.response.edit_message(embed=embed, view=self)
     @discord.ui.button(label="⭐ 1", style=discord.ButtonStyle.secondary, custom_id="rate1")
     async def r1(self, interaction: discord.Interaction, button: discord.ui.Button): await self.send_thanks(interaction, 1)
@@ -107,7 +109,7 @@ class CommentModal(discord.ui.Modal, title="Komentar / Testimoni"):
                 await send_vouch(guild, interaction.user, paket, stars, self.komentar.value)
         except Exception as e:
             print(f"Gagal vouch: {e}")
-        await interaction.response.send_message(f"Terima kasih komentarnya! 💗\n> {self.komentar.value}\n\nTestimoni kamu sudah muncul di **#⭐ • vouch**! 🎉\nRating: {'⭐'*stars} ({stars}/5)", ephemeral=True)
+        await interaction.response.send_message(f"Terima kasih komentarnya! 💗\n> {self.komentar.value}\n\nTestimoni kamu sudah muncul di **#⭐┆・vouch**! 🎉\nRating: {'⭐'*stars} ({stars}/5)", ephemeral=True)
 
 class StatusView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
