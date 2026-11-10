@@ -3,6 +3,7 @@ from discord.ext import commands
 import os
 import time
 import io
+from datetime import datetime
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -15,6 +16,7 @@ QRIS_URL = "https://cdn.discordapp.com/attachments/1569635326928879656/156963593
 
 ticket_data = {}
 ticket_counter = 0
+user_ratings = {}
 
 def get_status_channel(guild):
     for ch in guild.text_channels:
@@ -23,10 +25,15 @@ def get_status_channel(guild):
     return None
 
 def get_ticket_category(guild):
-    # Kunci ke kategori pian: ── ── ── 🎫 ✦ TICKET ✦ ── ── ──
     for cat in guild.categories:
         if "TICKET" in cat.name.upper():
             return cat
+    return None
+
+def get_vouch_channel(guild):
+    for ch in guild.text_channels:
+        if "vouch" in ch.name.lower():
+            return ch
     return None
 
 async def send_status_update(guild, number, username, user_id, paket, status_text, color):
@@ -36,12 +43,31 @@ async def send_status_update(guild, number, username, user_id, paket, status_tex
     embed.set_footer(text="MIPI STORE • Order Status")
     await ch.send(embed=embed)
 
+async def send_vouch(guild, user, paket, stars, komentar):
+    ch = get_vouch_channel(guild)
+    if not ch: return
+    star_str = "⭐" * stars
+    tanggal = datetime.now().strftime("%d %b %Y").upper()
+    colors = {5: 0xffd700, 4: 0x57f287, 3: 0xfee75c, 2: 0xe67e22, 1: 0xed4245}
+    color = colors.get(stars, 0xffd700)
+    embed = discord.Embed(title="⭐ TESTIMONI PEMBELI — Mipi Store", description=f"👤 **Pembeli:** {user.mention}\n📦 **Produk:** {paket}\n⭐ **Rating:** {star_str} ({stars}/5)\n📅 **Tanggal:** {tanggal}\n\n💬 **Ulasan & Review:**\n> \"{komentar}\"", color=color)
+    # Foto profil kecil di kanan - Versi B
+    try:
+        avatar_kecil = user.display_avatar.replace(size=64).url
+    except:
+        avatar_kecil = user.display_avatar.url
+    embed.set_thumbnail(url=avatar_kecil)
+    embed.set_footer(text="MIPI STORE • Terima kasih sudah order 💗")
+    await ch.send(embed=embed)
+
 class RatingView(discord.ui.View):
     def __init__(self, ticket_number):
         super().__init__(timeout=None); self.ticket_number = ticket_number
     async def send_thanks(self, interaction, stars):
-        embed = discord.Embed(title="Terima Kasih! 💗", description=f"Kamu memberi rating **{stars} ⭐** untuk MIPI STORE!\n\nTerima kasih sudah order di Mipi Store! Ditunggu order berikutnya ya 🌸", color=0xff69b4)
-        await interaction.response.edit_message(embed=embed, view=None)
+        user_ratings[interaction.user.id] = stars
+        star_str = "⭐" * stars
+        embed = discord.Embed(title="Terima Kasih! 💗", description=f"Kamu memberi rating **{star_str} ({stars}/5)** untuk MIPI STORE!\n\nTerima kasih sudah order di Mipi Store! Ditunggu order berikutnya ya 🌸\n\n👇 **Pencet Add Comment dibawah biar testimoni kamu muncul di #⭐ • vouch!**", color=0xff69b4)
+        await interaction.response.edit_message(embed=embed, view=self)
     @discord.ui.button(label="⭐ 1", style=discord.ButtonStyle.secondary, custom_id="rate1")
     async def r1(self, interaction: discord.Interaction, button: discord.ui.Button): await self.send_thanks(interaction, 1)
     @discord.ui.button(label="⭐ 2", style=discord.ButtonStyle.secondary, custom_id="rate2")
@@ -64,7 +90,24 @@ class CommentModal(discord.ui.Modal, title="Komentar / Testimoni"):
         super().__init__(); self.ticket_number = ticket_number
     komentar = discord.ui.TextInput(label="Komentar kamu", placeholder="Pelayanannya cepat banget, recommended!", style=discord.TextStyle.paragraph, required=True)
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message(f"Terima kasih komentarnya! 💗\n> {self.komentar.value}\n\nKomentar kamu untuk Ticket #{self.ticket_number} sudah tersimpan!", ephemeral=True)
+        stars = user_ratings.get(interaction.user.id, 5)
+        paket = "ORDER ROBUX"
+        for d in ticket_data.values():
+            if d.get("number") == self.ticket_number:
+                paket = d.get("paket", paket)
+                break
+        try:
+            guild = None
+            for g in bot.guilds:
+                ch = get_vouch_channel(g)
+                if ch:
+                    guild = g
+                    break
+            if guild:
+                await send_vouch(guild, interaction.user, paket, stars, self.komentar.value)
+        except Exception as e:
+            print(f"Gagal vouch: {e}")
+        await interaction.response.send_message(f"Terima kasih komentarnya! 💗\n> {self.komentar.value}\n\nTestimoni kamu sudah muncul di **#⭐ • vouch**! 🎉\nRating: {'⭐'*stars} ({stars}/5)", ephemeral=True)
 
 class StatusView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
@@ -132,7 +175,6 @@ class OrderModal(discord.ui.Modal, title="Pesanan Robux"):
         ticket_counter += 1
         guild = interaction.guild
         overwrites = {guild.default_role: discord.PermissionOverwrite(read_messages=False), interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True), guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)}
-        # === MASUK KE KATEGORI ── ── ── 🎫 ✦ TICKET ✦ ── ── ── ===
         category = get_ticket_category(guild)
         channel = await guild.create_text_channel(name=f"ticket-{interaction.user.name}", overwrites=overwrites, category=category)
         ticket_data[channel.id] = {"user_id": interaction.user.id, "username": interaction.user.name, "created_at": time.time(), "number": ticket_counter, "paket": self.paket.value}
