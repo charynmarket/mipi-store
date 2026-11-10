@@ -13,8 +13,8 @@ intents.members = True
 intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# === FOTO BARU PIAN - UDAH DIGANTI ===
-WELCOME_URL = "https://cdn.discordapp.com/attachments/1569842003016028200/1569842148269105172/IMG_5397.jpg?ex=6af4ecee&is=6af39b6e&hm=9c141aa953249dd64089aee4459035d70e2d9b46f1731608f99a1491c77e2e78&"
+# === GAMBAR BARU - THANK YOU MIPI STORE - UDAH PERMANEN ===
+WELCOME_URL = "https://cdn.discordapp.com/attachments/1569842759873990786/1569848193779236884/IMG_6021.jpg"
 QRIS_URL = "https://cdn.discordapp.com/attachments/1569635326928879656/1569635930090897448/IMG_5210.jpg?ex=6af42ce0&is=6af2db60&hm=26d9c6a1ea6c6eb5cbfcf6bf3cbab686bd8c7fd862b8cbb97af970b690e65764&"
 
 ticket_data = {}
@@ -70,7 +70,7 @@ async def send_status_update(guild, number, username, user_id, paket, status_tex
     embed.set_footer(text="MIPI STORE • Order Status")
     await ch.send(embed=embed)
 
-# === HISTORY ORDER - PERSIS 404 STORE - LABEL DI ATAS, ISI DI BAWAH ===
+# === HISTORY ORDER - PERSIS 404 STORE ===
 async def send_history_log(guild, channel, data, admin_user):
     ch = get_history_channel(guild)
     if not ch: return
@@ -85,7 +85,7 @@ async def send_history_log(guild, channel, data, admin_user):
     embed.set_image(url=WELCOME_URL)
     await ch.send(embed=embed)
 
-# === VOUCH + THREAD OTOMATIS - PERSIS 404 STORE ===
+# === VOUCH + THREAD OTOMATIS ===
 async def send_vouch(guild, user, paket, stars, komentar, ticket_number=0, ticket_name=""):
     ch = get_vouch_channel(guild)
     if not ch: return
