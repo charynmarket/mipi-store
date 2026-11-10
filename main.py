@@ -24,6 +24,28 @@ user_last_ticket = {}
 
 PRICELIST = {100: 16500, 200: 33000, 300: 49500, 400: 66000, 500: 78000, 1000: 155000, 2000: 310000, 3000: 465000, 4000: 620000, 5000: 775000}
 
+# === ANTI JUALAN ROBUX - KAYAK 404BOT ===
+# Kata-kata yang dilarang di #market-publik
+BANNED_WORDS = [
+    "wts robux", "jual robux", "sell robux", "jual rb", "wts rb",
+    "jual limited", "wts limited", "sell limited",
+    "jual robux murah", "robux murah", "top up robux",
+    "wts akun robux", "jual akun robux",
+    "wts", "wtt robux", "wtb robux",
+    "jual robux via", "robux via username murah"
+]
+
+# Kata pengecualian - kalau ada kata ini, boleh (biar yang jual akun pribadi kayak di screenshot ga kena, tapi yang jual robux tetap kena)
+# Kalau pian mau SEMUA WTS dilarang, hapus aja pengecualian ini
+ALLOWED_IF_HAS = ["akun pribadi", "akun roblox", "akun pribadi secepatnya"]
+
+def is_banned_selling(text):
+    low = text.lower()
+    # Kalau ada kata yang dibolehkan DAN tidak ada kata robux/limited, anggap aman
+    if any(a in low for a in ALLOWED_IF_HAS) and "robux" not in low and "limited" not in low:
+        return False
+    return any(w in low for w in BANNED_WORDS)
+
 def hitung_harga(paket_text):
     m = re.search(r'(\d+)', str(paket_text).replace('.', '').replace(',', ''))
     if not m: return "500", "Rp 78.000"
@@ -57,6 +79,11 @@ def get_vouch_channel(guild):
         if "vouch" in ch.name.lower(): return ch
     return None
 
+def get_market_channel(guild):
+    for ch in guild.text_channels:
+        if "market-publik" in ch.name.lower() or "market" in ch.name.lower(): return ch
+    return None
+
 def make_html_transcript(number, messages, username, paket, duration):
     rows = ""
     for m in messages:
@@ -70,7 +97,6 @@ async def send_status_update(guild, number, username, user_id, paket, status_tex
     embed.set_footer(text="MIPI STORE • Order Status")
     await ch.send(embed=embed)
 
-# === HISTORY ORDER - PERSIS 404 STORE ===
 async def send_history_log(guild, channel, data, admin_user):
     ch = get_history_channel(guild)
     if not ch: return
@@ -85,7 +111,6 @@ async def send_history_log(guild, channel, data, admin_user):
     embed.set_image(url=WELCOME_URL)
     await ch.send(embed=embed)
 
-# === VOUCH + THREAD OTOMATIS ===
 async def send_vouch(guild, user, paket, stars, komentar, ticket_number=0, ticket_name=""):
     ch = get_vouch_channel(guild)
     if not ch: return
@@ -269,6 +294,26 @@ class OrderView(discord.ui.View):
 @bot.event
 async def on_message(message):
     if message.author.bot: return
+
+    # === ANTI JUALAN ROBUX DI MARKET-PUBLIK ===
+    # Cek kalau di channel market-publik / market
+    if message.guild and "market" in message.channel.name.lower():
+        # Owner & Admin boleh, jangan dihapus
+        if message.author.id != message.guild.owner_id and not message.author.guild_permissions.administrator:
+            if is_banned_selling(message.content):
+                try: await message.delete()
+                except: pass
+                # Kirim Stickied Message kayak 404bot
+                embed = discord.Embed(title="Stickied Message:", description="DILARANG MENJUAL PRODUK YANG KAMI JUAL SEPERTI ROBUX DAN LIMITED ITEM", color=0xff0000)
+                warn = await message.channel.send(f"{message.author.mention}", embed=embed)
+                # Hapus peringatan setelah 10 detik biar ga spam
+                await asyncio.sleep(10)
+                try: await warn.delete()
+                except: pass
+                try: await message.author.send(f"⚠️ Pesan kamu di **#{message.channel.name}** dihapus!\n\n**Alasan:** Dilarang menjual produk yang kami jual seperti Robux dan Limited Item di MIPI STORE!\n\nKalau mau jual Robux, silahkan order lewat ticket kami ya 💗")
+                except: pass
+                return
+
     if message.channel.id in ticket_data: ticket_data[message.channel.id]["last_activity"] = time.time()
     await bot.process_commands(message)
 
@@ -289,8 +334,19 @@ async def ticket(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed1)
     await interaction.followup.send(embed=embed2, view=OrderView())
 
+@bot.tree.command(name="market-rules", description="Kirim aturan market (Stickied Message kayak 404bot)")
+async def market_rules(interaction: discord.Interaction):
+    if interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Hanya Owner!", ephemeral=True); return
+    embed = discord.Embed(title="Stickied Message:", description="DILARANG MENJUAL PRODUK YANG KAMI JUAL SEPERTI ROBUX DAN LIMITED ITEM", color=0xff0000)
+    msg = await interaction.channel.send(embed=embed)
+    try: await msg.pin()
+    except: pass
+    await interaction.response.send_message("✅ Aturan market sudah di-pin!", ephemeral=True)
+
 @bot.tree.command(name="ping", description="Cek bot")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"Pong! 🏓 MIPI STORE online Wal! {round(bot.latency*1000)}ms")
 
+import asyncio
 bot.run(os.getenv("DISCORD_TOKEN"))
