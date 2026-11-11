@@ -92,7 +92,7 @@ async def send_history_log(guild, channel, data, admin_user):
     ticket_name = channel.name if channel else f"robux-via-username-{number}-{data.get('username','user')}"
     embed = discord.Embed(color=0x2b2d31)
     embed.description = f"🔒 Ticket Log\n\n🎫 Ticket\n{ticket_name}\n🔒 Action\nClosed\n⚡ Panel\nRobux Via Username\n🎀 Member\n<@{user_id}>\n👤 Username Roblox\n{roblox_user}\n✨ Jumlah Robux\n{jumlah}\n💰 Total Harga\n{harga}\n💳 Payment\n{pembayaran}\n✅ Admin\n{admin_user.mention if admin_user else 'Auto-Close'}"
-    embed.set_image(url=WELCOME_URL)
+    embed.set_image(url=THANKYOU_URL)
     await ch.send(embed=embed)
 
 async def send_vouch(guild, user, paket, stars, komentar, ticket_number=0, ticket_name=""):
@@ -166,6 +166,7 @@ class RatingView(discord.ui.View):
         user_ratings[interaction.user.id] = stars
         star_str = "⭐" * stars
         embed = discord.Embed(title="Terima Kasih! 💗", description=f"Kamu memberi rating **{star_str} ({stars}/5)** untuk MIPI STORE!\n\nTerima kasih sudah order di Mipi Store! Ditunggu order berikutnya ya 🌸\n\n👇 **Pencet Add Comment dibawah biar vouch kamu muncul di #⭐┆・vouch + jadi thread kayak 404 STORE!**", color=0xff69b4)
+        embed.set_image(url=THANKYOU_URL)
         await interaction.response.edit_message(embed=embed, view=self)
     @discord.ui.button(label="⭐ 1", style=discord.ButtonStyle.secondary, custom_id="rate1")
     async def r1(self, interaction: discord.Interaction, button: discord.ui.Button): await self.send_thanks(interaction, 1)
@@ -258,8 +259,11 @@ class OrderModal(discord.ui.Modal, title="Pesanan Robux"):
         channel = await guild.create_text_channel(name=f"robux-via-username-{ticket_counter}-{interaction.user.name}", overwrites=overwrites, category=category)
         ticket_data[channel.id] = {"user_id": interaction.user.id, "username": interaction.user.name, "roblox_username": self.username.value, "pembayaran": self.pembayaran.value, "created_at": time.time(), "last_activity": time.time(), "number": ticket_counter, "paket": self.paket.value}
         embed = discord.Embed(title=f"🎫 Ticket Baru - {interaction.user.name}", description=f"**Username Roblox:** {self.username.value}\n**Paket:** {self.paket.value}\n**Pembayaran:** {self.pembayaran.value}\n**Ticket #{ticket_counter}**\n\nSilahkan kirim bukti pembayaran QRIS disini ya 💗", color=0xff69b4)
-        embed.set_image(url=QRIS_URL)
+        embed.set_image(url=WELCOME_URL)
         await channel.send(f"{interaction.user.mention} Halo! Selamat datang di MIPI STORE! 🌸", embed=embed, view=CloseView())
+        embed_qris = discord.Embed(title="💳 Scan QRIS Disini", description="Silahkan scan QRIS ini untuk pembayaran ya 💗", color=0xff69b4)
+        embed_qris.set_image(url=QRIS_URL)
+        await channel.send(embed=embed_qris)
         await channel.send("**📦 STATUS ORDER - Owner only:**", view=StatusView())
         await send_status_update(guild, ticket_counter, interaction.user.name, interaction.user.id, self.paket.value, "🆕 Ticket Baru Dibuat", 0xff69b4)
         go_view = discord.ui.View()
