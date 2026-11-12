@@ -6,6 +6,7 @@ import io
 import html
 import re
 import asyncio
+import json
 from datetime import datetime
 
 intents = discord.Intents.default()
@@ -24,6 +25,36 @@ user_ratings = {}
 user_last_ticket = {}
 
 PRICELIST = {100: 16500, 200: 33000, 300: 49500, 400: 66000, 500: 78000, 1000: 155000, 2000: 310000, 3000: 465000, 4000: 620000, 5000: 775000}
+
+# === LEADERBOARD - TOP BUYER ===
+LEADERBOARD_FILE = "leaderboard.json"
+
+def load_leaderboard():
+    try:
+        with open(LEADERBOARD_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_leaderboard(data):
+    with open(LEADERBOARD_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+def add_to_leaderboard(user_id, username, paket_text):
+    m = re.search(r'(\d+)', str(paket_text).replace('.', '').replace(',', ''))
+    if not m: return
+    jumlah = int(m.group(1))
+    data = load_leaderboard()
+    bulan = datetime.now().strftime("%Y-%m")
+    if bulan not in data:
+        data[bulan] = {}
+    uid = str(user_id)
+    if uid not in data[bulan]:
+        data[bulan][uid] = {"username": username, "total": 0, "transaksi": 0}
+    data[bulan][uid]["username"] = username
+    data[bulan][uid]["total"] += jumlah
+    data[bulan][uid]["transaksi"] += 1
+    save_leaderboard(data)
 
 # === PILIHAN A - BOLEH JUAL AKUN PRIBADI, DILARANG JUAL ROBUX / LIMITED ===
 BANNED_WORDS = ["wts robux", "jual robux", "sell robux", "jual rb", "wts rb", "jual limited", "wts limited", "sell limited", "jual robux murah", "robux murah", "top up robux", "jual akun robux", "wts akun robux", "wtt robux", "wtb robux", "jual robux via", "robux via username murah"]
@@ -145,6 +176,11 @@ async def do_auto_close(guild, channel, data, reason="auto-closed due to inactiv
         embed = discord.Embed(title="Rate Your Experience", description=f"Hi {user.name}! Your support ticket has been resolved.\nPlease rate your experience by clicking a star below.\n\n**Ticket #{number} in 🛒 ORDER ROBUX**\n**Resolved in**\n{duration} minutes\n\n**Closed by**\n{admin_user.name if admin_user else 'MIPI STORE (Auto-Close)'}", color=0x2b2d31)
         await user.send(embed=embed, view=RatingView(number))
     except: pass
+    # Catat ke leaderboard pas ticket ditutup
+    try:
+        add_to_leaderboard(user_id, data.get("username", "User"), paket)
+    except Exception as e:
+        print(f"Gagal leaderboard: {e}")
     if channel.id in ticket_data: del ticket_data[channel.id]
     try: await channel.delete()
     except: pass
@@ -314,6 +350,25 @@ async def ticket(interaction: discord.Interaction):
     embed2.set_footer(text="Mipi Store • Rafi Store")
     await interaction.response.send_message(embed=embed1)
     await interaction.followup.send(embed=embed2, view=OrderView())
+
+@bot.tree.command(name="leaderboard", description="Lihat Top Buyer MIPI STORE bulan ini")
+async def leaderboard(interaction: discord.Interaction):
+    bulan = datetime.now().strftime("%Y-%m")
+    bulan_tampil = datetime.now().strftime("%Y-%m")
+    data = load_leaderboard()
+    bulan_data = data.get(bulan, {})
+    if not bulan_data:
+        await interaction.response.send_message("Belum ada data Top Buyer bulan ini Wal! 🌸\nNanti otomatis keisi kalau ada ticket yang di-close!", ephemeral=True)
+        return
+    sorted_users = sorted(bulan_data.items(), key=lambda x: x[1]["total"], reverse=True)[:10]
+    medali = ["🥇", "🥈", "🥉", "#4", "#5", "#6", "#7", "#8", "#9", "#10"]
+    desc = f"Leaderboard bulanan • {bulan_tampil}\nPeringkat berdasarkan total Robux yang tercatat.\n\n**TOP 10 BUYERS**\n"
+    for i, (uid, info) in enumerate(sorted_users):
+        desc += f"{medali[i]} <@{uid}> — {info['total']:,} R$ · {info['transaksi']} transaksi\n"
+    desc += f"\nMIPI STORE OFFICIAL • Data berdasarkan transaksi yang dicatat admin | {datetime.now().strftime('%m/%d/%y, %I:%M %p')}"
+    embed = discord.Embed(title="🏆 MIPI STORE — TOP BUYER", description=desc, color=0xff69b4)
+    embed.set_footer(text="Mipi Store • Rafi Store")
+    await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="market-rules", description="Kirim aturan market")
 async def market_rules(interaction: discord.Interaction):
