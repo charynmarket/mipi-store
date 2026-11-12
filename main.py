@@ -16,7 +16,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 WELCOME_URL = "https://raw.githubusercontent.com/mipistore/mipi-store/main/97b3c2a7-b1e8-66b1-50e5-563dc75098ea.jpeg"
 THANKYOU_URL = "https://raw.githubusercontent.com/mipistore/mipi-store/main/IMG_6021.jpeg"
-QRIS_URL = "https://cdn.discordapp.com/attachments/1569635326928879656/1569635930090897448/IMG_5210.jpg?ex=6af42ce0&is=6af2db60&hm=26d9c6a1ea6c6eb5cbfcf6bf3cbab686bd8c7fd862b8cbb97af970b690e65764&"
+QRIS_URL = "https://raw.githubusercontent.com/mipistore/mipi-store/main/IMG_5210.jpeg"
 
 ticket_data = {}
 ticket_counter = 0
