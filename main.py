@@ -27,7 +27,6 @@ user_last_ticket = {}
 
 PRICELIST = {100: 16500, 200: 33000, 300: 49500, 400: 66000, 500: 78000, 1000: 155000, 2000: 310000, 3000: 465000, 4000: 620000, 5000: 775000}
 
-# === LEADERBOARD + SALDO ===
 LEADERBOARD_FILE = "leaderboard.json"
 
 def load_leaderboard():
@@ -74,7 +73,38 @@ def get_total_belanja(user_id):
             total_transaksi += users[uid].get("transaksi", 0)
     return total_rp, total_robux, total_transaksi
 
-# === GIVEAWAY OTOMATIS ===
+PROMO_FILE = "promo.json"
+
+def load_promo():
+    try:
+        with open(PROMO_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_promo(data):
+    with open(PROMO_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+def cek_promo(kode, harga_awal, jumlah_robux=0):
+    if not kode or not str(kode).strip():
+        return harga_awal, 0, None
+    kode = str(kode).upper().strip()
+    data = load_promo()
+    if kode not in data:
+        return harga_awal, 0, "❌ Kode promo tidak ditemukan!"
+    p = data[kode]
+    if jumlah_robux < 500:
+        return harga_awal, 0, f"❌ Minimal belanja 500 Robux untuk pakai promo ini! Kamu beli {jumlah_robux} Robux, belum cukup Wal!"
+    if p.get("dipakai", 0) >= p.get("max", 999):
+        return harga_awal, 0, "❌ Kode promo sudah habis dipakai!"
+    if p["tipe"] == "persen":
+        diskon = int(harga_awal * p["diskon"] / 100)
+    else:
+        diskon = int(p["diskon"])
+    harga_baru = max(0, harga_awal - diskon)
+    return harga_baru, diskon, None
+
 giveaway_data = {}
 
 class GiveawayView(discord.ui.View):
@@ -125,7 +155,6 @@ async def end_giveaway(guild, channel_id, message_id, giveaway_id):
     except Exception as e:
         print(f"Gagal end giveaway: {e}")
 
-# === PILIHAN A - BOLEH JUAL AKUN PRIBADI, DILARANG JUAL ROBUX / LIMITED ===
 BANNED_WORDS = ["wts robux", "jual robux", "sell robux", "jual rb", "wts rb", "jual limited", "wts limited", "sell limited", "jual robux murah", "robux murah", "top up robux", "jual akun robux", "wts akun robux", "wtt robux", "wtb robux", "jual robux via", "robux via username murah"]
 ALLOWED_IF_HAS = ["akun pribadi", "akun roblox", "akun pribadi secepatnya"]
 
@@ -365,6 +394,7 @@ class OrderModal(discord.ui.Modal, title="Pesanan Robux"):
     username = discord.ui.TextInput(label="Username", placeholder="UsernameRoblox", required=True)
     paket = discord.ui.TextInput(label="Paket yang dipilih", placeholder="Contoh: 500 Robux", required=True)
     pembayaran = discord.ui.TextInput(label="Metode Pembayaran", placeholder="QRIS", default="QRIS", required=True)
+    kode_promo = discord.ui.TextInput(label="Kode Promo (Opsional)", placeholder="Contoh: MIPI10 - Kosongin aja kalau gak ada", required=False)
     async def on_submit(self, interaction: discord.Interaction):
         global ticket_counter
         ticket_counter += 1
@@ -372,8 +402,23 @@ class OrderModal(discord.ui.Modal, title="Pesanan Robux"):
         overwrites = {guild.default_role: discord.PermissionOverwrite(read_messages=False), interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True), guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)}
         category = get_ticket_category(guild)
         channel = await guild.create_text_channel(name=f"robux-via-username-{ticket_counter}-{interaction.user.name}", overwrites=overwrites, category=category)
-        ticket_data[channel.id] = {"user_id": interaction.user.id, "username": interaction.user.name, "roblox_username": self.username.value, "pembayaran": self.pembayaran.value, "created_at": time.time(), "last_activity": time.time(), "number": ticket_counter, "paket": self.paket.value}
-        embed = discord.Embed(title=f"🎫 Ticket Baru - {interaction.user.name}", description=f"**Username Roblox:** {self.username.value}\n**Paket:** {self.paket.value}\n**Pembayaran:** {self.pembayaran.value}\n**Ticket #{ticket_counter}**\n\nSilahkan kirim bukti pembayaran QRIS disini ya 💗", color=0xff69b4)
+        m_temp = re.search(r'(\d+)', str(self.paket.value).replace('.', ''))
+        jumlah_int = int(m_temp.group(1)) if m_temp else 500
+        harga_awal = PRICELIST.get(jumlah_int, jumlah_int * 165)
+        kode_input = self.kode_promo.value.strip() if self.kode_promo.value else ""
+        harga_akhir, diskon, err_promo = cek_promo(kode_input, harga_awal, jumlah_int)
+        promo_text = ""
+        if kode_input and not err_promo and diskon > 0:
+            pdata = load_promo()
+            k_up = kode_input.upper()
+            if k_up in pdata:
+                pdata[k_up]["dipakai"] = pdata[k_up].get("dipakai", 0) + 1
+                save_promo(pdata)
+            promo_text = f"\n🏷️ **Kode Promo:** {k_up} (-Rp {diskon:,})".replace(",", ".") + f"\n💸 **Harga Setelah Diskon:** Rp {harga_akhir:,}".replace(",", ".")
+        elif kode_input and err_promo:
+            promo_text = f"\n⚠️ **Kode Promo:** {kode_input.upper()} - {err_promo} (Harga normal)\n💰 **Harga:** Rp {harga_awal:,}".replace(",", ".")
+        ticket_data[channel.id] = {"user_id": interaction.user.id, "username": interaction.user.name, "roblox_username": self.username.value, "pembayaran": self.pembayaran.value, "created_at": time.time(), "last_activity": time.time(), "number": ticket_counter, "paket": self.paket.value, "promo": kode_input, "harga_akhir": harga_akhir}
+        embed = discord.Embed(title=f"🎫 Ticket Baru - {interaction.user.name}", description=f"**Username Roblox:** {self.username.value}\n**Paket:** {self.paket.value}\n**Pembayaran:** {self.pembayaran.value}{promo_text}\n**Ticket #{ticket_counter}**\n\nSilahkan kirim bukti pembayaran QRIS disini ya 💗", color=0xff69b4)
         embed.set_image(url=WELCOME_URL)
         await channel.send(f"{interaction.user.mention} Halo! Selamat datang di MIPI STORE! 🌸", embed=embed, view=CloseView())
         embed_qris = discord.Embed(title="💳 Scan QRIS Disini", description="Silahkan scan QRIS ini untuk pembayaran ya 💗", color=0xff69b4)
@@ -473,6 +518,69 @@ async def setup_saldo(interaction: discord.Interaction):
     embed = discord.Embed(title="💳 CEK SALDO - MIPI STORE", description="🌸 **MAU TAU UDAH HABIS BERAPA DI MIPI STORE?**\n\nPencet tombol **💳 CEK SALDO SAYA** dibawah ini!\n\nNanti bakal muncul:\n💰 Total Belanja kamu\n📦 Total Robux yang udah dibeli\n🧾 Total Transaksi kamu\n\nCuma kamu yang bisa liat, aman! Privasi terjaga 💗", color=0xff69b4)
     embed.set_footer(text="Mipi Store • Rafi Store • Check Saldo")
     await interaction.response.send_message(embed=embed, view=SaldoView())
+
+@bot.tree.command(name="buat-promo", description="Buat kode promo diskon (Owner only)")
+async def buat_promo(interaction: discord.Interaction, kode: str, diskon: int, tipe: str = "nominal", max_pakai: int = 10):
+    if interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Hanya Owner!", ephemeral=True); return
+    kode = kode.upper().strip()
+    data = load_promo()
+    data[kode] = {"diskon": diskon, "tipe": tipe, "max": max_pakai, "dipakai": 0, "dibuat_oleh": interaction.user.name}
+    save_promo(data)
+    if tipe == "persen":
+        desc = f"Diskon **{diskon}%**"
+    else:
+        desc = f"Diskon **Rp {diskon:,}**".replace(",", ".")
+    embed = discord.Embed(title="🏷️ KODE PROMO BARU!", description=f"🎉 **Kode:** `{kode}`\n{desc}\n📦 **Max Pakai:** {max_pakai} orang\n⚠️ **Minimal Belanja:** 500 Robux\n\nCara pakai: Pas order, masukin kode `{kode}` di kolom Kode Promo! Kosongin aja kalau gak punya kode, tetap bisa order!\n\nShare ke #📣・announcement biar rame!", color=0x57f287)
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="list-promo", description="Lihat semua kode promo yang aktif")
+async def list_promo(interaction: discord.Interaction):
+    data = load_promo()
+    if not data:
+        await interaction.response.send_message("Belum ada kode promo Wal! Bikin dulu pake `/buat-promo`", ephemeral=True); return
+    desc = "**🏷️ LIST KODE PROMO MIPI STORE**\n\n"
+    for kode, p in data.items():
+        sisa = p.get("max", 999) - p.get("dipakai", 0)
+        if p["tipe"] == "persen":
+            d = f"{p['diskon']}%"
+        else:
+            d = f"Rp {p['diskon']:,}".replace(",", ".")
+        status = "✅ AKTIF" if sisa > 0 else "❌ HABIS"
+        desc += f"`{kode}` - Diskon {d} - Sisa {sisa}/{p.get('max', 999)} - Min 500 R$ - {status}\n"
+    embed = discord.Embed(description=desc, color=0xff69b4)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="cek-promo", description="Cek apakah kode promo masih bisa dipakai")
+async def cek_promo_cmd(interaction: discord.Interaction, kode: str, paket: str = "500"):
+    kode_up = kode.upper().strip()
+    data = load_promo()
+    if kode_up not in data:
+        await interaction.response.send_message(f"❌ Kode `{kode_up}` tidak ditemukan!", ephemeral=True); return
+    p = data[kode_up]
+    sisa = p.get("max", 999) - p.get("dipakai", 0)
+    m = re.search(r'(\d+)', str(paket).replace('.', ''))
+    jumlah = int(m.group(1)) if m else 500
+    harga_awal = PRICELIST.get(jumlah, jumlah * 165)
+    harga_baru, diskon, err = cek_promo(kode_up, harga_awal, jumlah)
+    if err:
+        await interaction.response.send_message(err, ephemeral=True); return
+    harga_awal_s = f"Rp {harga_awal:,}".replace(",", ".")
+    diskon_s = f"Rp {diskon:,}".replace(",", ".")
+    harga_baru_s = f"Rp {harga_baru:,}".replace(",", ".")
+    await interaction.response.send_message(f"✅ Kode `{kode_up}` **MASIH AKTIF!**\n\n📦 Paket: {jumlah} Robux\n💰 Harga Normal: {harga_awal_s}\n🏷️ Diskon: {diskon_s}\n💸 Harga Setelah Diskon: **{harga_baru_s}**\n📦 Sisa: {sisa} orang\n⚠️ Minimal: 500 Robux", ephemeral=True)
+
+@bot.tree.command(name="hapus-promo", description="Hapus kode promo (Owner only)")
+async def hapus_promo(interaction: discord.Interaction, kode: str):
+    if interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Hanya Owner!", ephemeral=True); return
+    kode = kode.upper().strip()
+    data = load_promo()
+    if kode not in data:
+        await interaction.response.send_message(f"❌ Kode `{kode}` tidak ditemukan!", ephemeral=True); return
+    del data[kode]
+    save_promo(data)
+    await interaction.response.send_message(f"✅ Kode promo `{kode}` sudah dihapus!", ephemeral=True)
 
 @bot.tree.command(name="giveaway", description="Buat giveaway otomatis (Owner only)")
 async def giveaway_create(interaction: discord.Interaction, hadiah: str, durasi_menit: int, pemenang: int = 1):
