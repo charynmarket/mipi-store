@@ -7,6 +7,7 @@ import html
 import re
 import asyncio
 import json
+import random
 from datetime import datetime
 
 intents = discord.Intents.default()
@@ -26,7 +27,7 @@ user_last_ticket = {}
 
 PRICELIST = {100: 16500, 200: 33000, 300: 49500, 400: 66000, 500: 78000, 1000: 155000, 2000: 310000, 3000: 465000, 4000: 620000, 5000: 775000}
 
-# === LEADERBOARD + SALDO - TOP BUYER ===
+# === LEADERBOARD + SALDO ===
 LEADERBOARD_FILE = "leaderboard.json"
 
 def load_leaderboard():
@@ -44,7 +45,7 @@ def add_to_leaderboard(user_id, username, paket_text):
     m = re.search(r'(\d+)', str(paket_text).replace('.', '').replace(',', ''))
     if not m: return
     jumlah = int(m.group(1))
-    harga = PRICELIST.get(jumlah, jumlah * 156)
+    harga = PRICELIST.get(jumlah, jumlah * 165)
     data = load_leaderboard()
     bulan = datetime.now().strftime("%Y-%m")
     if bulan not in data:
@@ -73,6 +74,57 @@ def get_total_belanja(user_id):
             total_transaksi += users[uid].get("transaksi", 0)
     return total_rp, total_robux, total_transaksi
 
+# === GIVEAWAY OTOMATIS ===
+giveaway_data = {}
+
+class GiveawayView(discord.ui.View):
+    def __init__(self, giveaway_id): 
+        super().__init__(timeout=None)
+        self.giveaway_id = giveaway_id
+    @discord.ui.button(label="🎉 JOIN GIVEAWAY", style=discord.ButtonStyle.success, custom_id="join_giveaway")
+    async def join_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        data = giveaway_data.get(self.giveaway_id)
+        if not data:
+            await interaction.response.send_message("❌ Giveaway ini sudah berakhir!", ephemeral=True); return
+        if data["ended"]:
+            await interaction.response.send_message("❌ Giveaway sudah berakhir Wal!", ephemeral=True); return
+        uid = interaction.user.id
+        if uid in data["peserta"]:
+            await interaction.response.send_message("⚠️ Kamu udah join Wal! Tinggal tunggu diundi aja! 🎉", ephemeral=True); return
+        data["peserta"].append(uid)
+        try:
+            embed = interaction.message.embeds[0]
+            embed.description = f"🎁 **Hadiah:** {data['hadiah']}\n\n👑 **Host:** {data['host_mention']}\n⏰ **Berakhir:** <t:{data['end_timestamp']}:R>\n🏆 **Pemenang:** {data['pemenang']} orang\n👥 **Peserta:** {len(data['peserta'])} orang\n\nPencet tombol **🎉 JOIN GIVEAWAY** dibawah buat ikutan!\n\nGood luck! 🍀"
+            await interaction.message.edit(embed=embed, view=self)
+        except: pass
+        await interaction.response.send_message(f"✅ Berhasil join giveaway **{data['hadiah']}**! Good luck! 🍀\nPeserta sekarang: **{len(data['peserta'])} orang**", ephemeral=True)
+
+async def end_giveaway(guild, channel_id, message_id, giveaway_id):
+    data = giveaway_data.get(giveaway_id)
+    if not data or data["ended"]: return
+    data["ended"] = True
+    try:
+        channel = guild.get_channel(channel_id)
+        if not channel: return
+        try:
+            msg = await channel.fetch_message(message_id)
+        except:
+            msg = None
+        if len(data["peserta"]) == 0:
+            if msg:
+                embed = discord.Embed(title="🎁 GIVEAWAY BERAKHIR - GAK ADA PESERTA 😭", description=f"Hadiah: **{data['hadiah']}**\n\nGak ada yang join, padahal hadiahnya enak banget! Coba lagi next giveaway ya!", color=0xff0000)
+                await msg.edit(embed=embed, view=None)
+            await channel.send("😭 Giveaway berakhir tapi gak ada yang join! Sayang banget!")
+            return
+        winners = random.sample(data["peserta"], min(data["pemenang"], len(data["peserta"])))
+        winner_mentions = ", ".join([f"<@{w}>" for w in winners])
+        if msg:
+            embed = discord.Embed(title="🎉 GIVEAWAY BERAKHIR - PEMENANG TERPILIH!", description=f"🎁 **Hadiah:** {data['hadiah']}\n\n🏆 **Pemenang:**\n{winner_mentions}\n\n👥 **Total Peserta:** {len(data['peserta'])} orang\n👑 **Host:** {data['host_mention']}\n\nSelamat buat pemenang! 🎉 Silahkan DM host buat klaim hadiahnya ya!", color=0x57f287)
+            await msg.edit(embed=embed, view=None)
+        await channel.send(f"🎉🎉🎉 **GIVEAWAY BERAKHIR!** 🎉🎉🎉\n\n🎁 Hadiah: **{data['hadiah']}**\n🏆 Pemenang: {winner_mentions}\n\nSelamat ya! 🥳 DM {data['host_mention']} buat klaim hadiahnya!\nBuat yang belum menang, jangan sedih, next giveaway bakal ada lagi! 🍀")
+    except Exception as e:
+        print(f"Gagal end giveaway: {e}")
+
 # === PILIHAN A - BOLEH JUAL AKUN PRIBADI, DILARANG JUAL ROBUX / LIMITED ===
 BANNED_WORDS = ["wts robux", "jual robux", "sell robux", "jual rb", "wts rb", "jual limited", "wts limited", "sell limited", "jual robux murah", "robux murah", "top up robux", "jual akun robux", "wts akun robux", "wtt robux", "wtb robux", "jual robux via", "robux via username murah"]
 ALLOWED_IF_HAS = ["akun pribadi", "akun roblox", "akun pribadi secepatnya"]
@@ -87,7 +139,7 @@ def hitung_harga(paket_text):
     m = re.search(r'(\d+)', str(paket_text).replace('.', '').replace(',', ''))
     if not m: return "500", "Rp 78.000"
     jumlah = int(m.group(1))
-    harga = PRICELIST.get(jumlah, jumlah * 156)
+    harga = PRICELIST.get(jumlah, jumlah * 165)
     return str(jumlah), f"Rp {harga:,}".replace(",", ".")
 
 def get_status_channel(guild):
@@ -193,7 +245,6 @@ async def do_auto_close(guild, channel, data, reason="auto-closed due to inactiv
         embed = discord.Embed(title="Rate Your Experience", description=f"Hi {user.name}! Your support ticket has been resolved.\nPlease rate your experience by clicking a star below.\n\n**Ticket #{number} in 🛒 ORDER ROBUX**\n**Resolved in**\n{duration} minutes\n\n**Closed by**\n{admin_user.name if admin_user else 'MIPI STORE (Auto-Close)'}", color=0x2b2d31)
         await user.send(embed=embed, view=RatingView(number))
     except: pass
-    # Catat ke leaderboard + saldo pas ticket ditutup
     try:
         add_to_leaderboard(user_id, data.get("username", "User"), paket)
     except Exception as e:
@@ -299,6 +350,17 @@ class CloseView(discord.ui.View):
         await interaction.followup.send(f"Ticket ditutup oleh {interaction.user.mention}. Membuat transcript...")
         await do_auto_close(interaction.guild, channel, data, reason="closed by owner", admin_user=interaction.user)
 
+class SaldoView(discord.ui.View):
+    def __init__(self): super().__init__(timeout=None)
+    @discord.ui.button(label="💳 CEK SALDO SAYA", style=discord.ButtonStyle.primary, custom_id="cek_saldo_btn")
+    async def cek_saldo(self, interaction: discord.Interaction, button: discord.ui.Button):
+        total_rp, total_robux, total_transaksi = get_total_belanja(interaction.user.id)
+        harga_str = f"Rp {total_rp:,}".replace(",", ".")
+        embed = discord.Embed(color=0xff1493)
+        embed.description = f"💳 **INFORMASI SALDO / TOTAL TRANSAKSI** ✨\n\nHalo {interaction.user.mention},\nberikut adalah rincian total transaksi atau saldo belanja kamu di **MIPI STORE:**\n\n💰 **Total Belanja:** {harga_str}\n📦 **Total Robux:** {total_robux:,} R$\n🧾 **Total Transaksi:** {total_transaksi}x\n\nMIPI STORE • CHECK SALDO"
+        embed.set_footer(text="Mipi Store • Rafi Store")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
 class OrderModal(discord.ui.Modal, title="Pesanan Robux"):
     username = discord.ui.TextInput(label="Username", placeholder="UsernameRoblox", required=True)
     paket = discord.ui.TextInput(label="Paket yang dipilih", placeholder="Contoh: 500 Robux", required=True)
@@ -354,7 +416,7 @@ async def on_message(message):
 @bot.event
 async def on_ready():
     print(f"Login {bot.user}")
-    bot.add_view(OrderView()); bot.add_view(CloseView()); bot.add_view(StatusView()); bot.add_view(RatingView(0))
+    bot.add_view(OrderView()); bot.add_view(CloseView()); bot.add_view(StatusView()); bot.add_view(RatingView(0)); bot.add_view(SaldoView()); bot.add_view(GiveawayView("dummy"))
     if not check_inactive.is_running(): check_inactive.start()
     await bot.tree.sync()
 
@@ -371,7 +433,6 @@ async def ticket(interaction: discord.Interaction):
 @bot.tree.command(name="leaderboard", description="Lihat Top Buyer MIPI STORE bulan ini")
 async def leaderboard(interaction: discord.Interaction):
     bulan = datetime.now().strftime("%Y-%m")
-    bulan_tampil = datetime.now().strftime("%Y-%m")
     data = load_leaderboard()
     bulan_data = data.get(bulan, {})
     if not bulan_data:
@@ -379,7 +440,7 @@ async def leaderboard(interaction: discord.Interaction):
         return
     sorted_users = sorted(bulan_data.items(), key=lambda x: x[1]["total"], reverse=True)[:10]
     medali = ["🥇", "🥈", "🥉", "#4", "#5", "#6", "#7", "#8", "#9", "#10"]
-    desc = f"Leaderboard bulanan • {bulan_tampil}\nPeringkat berdasarkan total Robux yang tercatat.\n\n**TOP 10 BUYERS**\n"
+    desc = f"Leaderboard bulanan • {bulan}\nPeringkat berdasarkan total Robux yang tercatat.\n\n**TOP 10 BUYERS**\n"
     for i, (uid, info) in enumerate(sorted_users):
         desc += f"{medali[i]} <@{uid}> — {info['total']:,} R$ · {info['transaksi']} transaksi\n"
     desc += f"\nMIPI STORE OFFICIAL • Data berdasarkan transaksi yang dicatat admin | {datetime.now().strftime('%m/%d/%y, %I:%M %p')}"
@@ -404,6 +465,47 @@ async def saldo_prefix(ctx):
     embed.description = f"💳 **INFORMASI SALDO / TOTAL TRANSAKSI** ✨\n\nHalo {ctx.author.mention},\nberikut adalah rincian total transaksi atau saldo belanja kamu di **MIPI STORE:**\n\n💰 **Total Belanja:** {harga_str}\n📦 **Total Robux:** {total_robux:,} R$\n🧾 **Total Transaksi:** {total_transaksi}x\n\nMIPI STORE • CHECK SALDO"
     embed.set_footer(text="Mipi Store • Rafi Store")
     await ctx.send(embed=embed)
+
+@bot.tree.command(name="setup-saldo", description="Kirim panel cek saldo ke channel ini (Owner only)")
+async def setup_saldo(interaction: discord.Interaction):
+    if interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Hanya Owner!", ephemeral=True); return
+    embed = discord.Embed(title="💳 CEK SALDO - MIPI STORE", description="🌸 **MAU TAU UDAH HABIS BERAPA DI MIPI STORE?**\n\nPencet tombol **💳 CEK SALDO SAYA** dibawah ini!\n\nNanti bakal muncul:\n💰 Total Belanja kamu\n📦 Total Robux yang udah dibeli\n🧾 Total Transaksi kamu\n\nCuma kamu yang bisa liat, aman! Privasi terjaga 💗", color=0xff69b4)
+    embed.set_footer(text="Mipi Store • Rafi Store • Check Saldo")
+    await interaction.response.send_message(embed=embed, view=SaldoView())
+
+@bot.tree.command(name="giveaway", description="Buat giveaway otomatis (Owner only)")
+async def giveaway_create(interaction: discord.Interaction, hadiah: str, durasi_menit: int, pemenang: int = 1):
+    if interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Hanya Owner yang bisa bikin giveaway!", ephemeral=True); return
+    if durasi_menit < 1:
+        await interaction.response.send_message("❌ Durasi minimal 1 menit Wal!", ephemeral=True); return
+    if pemenang < 1:
+        await interaction.response.send_message("❌ Pemenang minimal 1 orang Wal!", ephemeral=True); return
+    giveaway_id = f"{interaction.channel.id}-{interaction.id}"
+    end_time = int(time.time() + durasi_menit * 60)
+    giveaway_data[giveaway_id] = {"hadiah": hadiah, "host_mention": interaction.user.mention, "host_id": interaction.user.id, "end_timestamp": end_time, "pemenang": pemenang, "peserta": [], "ended": False, "channel_id": interaction.channel.id}
+    embed = discord.Embed(title="🎁 GIVEAWAY MIPI STORE! 🎁", description=f"🎁 **Hadiah:** {hadiah}\n\n👑 **Host:** {interaction.user.mention}\n⏰ **Berakhir:** <t:{end_time}:R>\n🏆 **Pemenang:** {pemenang} orang\n👥 **Peserta:** 0 orang\n\nPencet tombol **🎉 JOIN GIVEAWAY** dibawah buat ikutan!\n\nGood luck! 🍀", color=0xff69b4)
+    embed.set_footer(text="Mipi Store • Giveaway • Good Luck!")
+    await interaction.response.send_message(embed=embed, view=GiveawayView(giveaway_id))
+    msg = await interaction.original_response()
+    giveaway_data[giveaway_id]["message_id"] = msg.id
+    await asyncio.sleep(durasi_menit * 60)
+    await end_giveaway(interaction.guild, interaction.channel.id, msg.id, giveaway_id)
+
+@bot.tree.command(name="giveaway-end", description="Akhiri giveaway lebih cepat / undi sekarang (Owner only)")
+async def giveaway_end(interaction: discord.Interaction):
+    if interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Hanya Owner!", ephemeral=True); return
+    found = None
+    for gid, data in giveaway_data.items():
+        if data["channel_id"] == interaction.channel.id and not data["ended"]:
+            found = (gid, data); break
+    if not found:
+        await interaction.response.send_message("❌ Gak ada giveaway yang lagi jalan di channel ini!", ephemeral=True); return
+    gid, data = found
+    await interaction.response.send_message("🎉 Giveaway diakhiri lebih cepat! Mengundi pemenang...", ephemeral=True)
+    await end_giveaway(interaction.guild, interaction.channel.id, data.get("message_id"), gid)
 
 @bot.tree.command(name="market-rules", description="Kirim aturan market")
 async def market_rules(interaction: discord.Interaction):
