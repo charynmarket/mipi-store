@@ -26,7 +26,7 @@ user_last_ticket = {}
 
 PRICELIST = {100: 16500, 200: 33000, 300: 49500, 400: 66000, 500: 78000, 1000: 155000, 2000: 310000, 3000: 465000, 4000: 620000, 5000: 775000}
 
-# === LEADERBOARD - TOP BUYER ===
+# === LEADERBOARD + SALDO - TOP BUYER ===
 LEADERBOARD_FILE = "leaderboard.json"
 
 def load_leaderboard():
@@ -44,17 +44,34 @@ def add_to_leaderboard(user_id, username, paket_text):
     m = re.search(r'(\d+)', str(paket_text).replace('.', '').replace(',', ''))
     if not m: return
     jumlah = int(m.group(1))
+    harga = PRICELIST.get(jumlah, jumlah * 156)
     data = load_leaderboard()
     bulan = datetime.now().strftime("%Y-%m")
     if bulan not in data:
         data[bulan] = {}
     uid = str(user_id)
     if uid not in data[bulan]:
-        data[bulan][uid] = {"username": username, "total": 0, "transaksi": 0}
+        data[bulan][uid] = {"username": username, "total": 0, "transaksi": 0, "total_rp": 0}
+    if "total_rp" not in data[bulan][uid]:
+        data[bulan][uid]["total_rp"] = 0
     data[bulan][uid]["username"] = username
     data[bulan][uid]["total"] += jumlah
     data[bulan][uid]["transaksi"] += 1
+    data[bulan][uid]["total_rp"] += harga
     save_leaderboard(data)
+
+def get_total_belanja(user_id):
+    data = load_leaderboard()
+    total_rp = 0
+    total_robux = 0
+    total_transaksi = 0
+    for bulan, users in data.items():
+        uid = str(user_id)
+        if uid in users:
+            total_rp += users[uid].get("total_rp", 0)
+            total_robux += users[uid].get("total", 0)
+            total_transaksi += users[uid].get("transaksi", 0)
+    return total_rp, total_robux, total_transaksi
 
 # === PILIHAN A - BOLEH JUAL AKUN PRIBADI, DILARANG JUAL ROBUX / LIMITED ===
 BANNED_WORDS = ["wts robux", "jual robux", "sell robux", "jual rb", "wts rb", "jual limited", "wts limited", "sell limited", "jual robux murah", "robux murah", "top up robux", "jual akun robux", "wts akun robux", "wtt robux", "wtb robux", "jual robux via", "robux via username murah"]
@@ -176,7 +193,7 @@ async def do_auto_close(guild, channel, data, reason="auto-closed due to inactiv
         embed = discord.Embed(title="Rate Your Experience", description=f"Hi {user.name}! Your support ticket has been resolved.\nPlease rate your experience by clicking a star below.\n\n**Ticket #{number} in 🛒 ORDER ROBUX**\n**Resolved in**\n{duration} minutes\n\n**Closed by**\n{admin_user.name if admin_user else 'MIPI STORE (Auto-Close)'}", color=0x2b2d31)
         await user.send(embed=embed, view=RatingView(number))
     except: pass
-    # Catat ke leaderboard pas ticket ditutup
+    # Catat ke leaderboard + saldo pas ticket ditutup
     try:
         add_to_leaderboard(user_id, data.get("username", "User"), paket)
     except Exception as e:
@@ -369,6 +386,24 @@ async def leaderboard(interaction: discord.Interaction):
     embed = discord.Embed(title="🏆 MIPI STORE — TOP BUYER", description=desc, color=0xff69b4)
     embed.set_footer(text="Mipi Store • Rafi Store")
     await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="saldo", description="Cek total belanja kamu di MIPI STORE")
+async def saldo_slash(interaction: discord.Interaction):
+    total_rp, total_robux, total_transaksi = get_total_belanja(interaction.user.id)
+    harga_str = f"Rp {total_rp:,}".replace(",", ".")
+    embed = discord.Embed(color=0xff1493)
+    embed.description = f"💳 **INFORMASI SALDO / TOTAL TRANSAKSI** ✨\n\nHalo {interaction.user.mention},\nberikut adalah rincian total transaksi atau saldo belanja kamu di **MIPI STORE:**\n\n💰 **Total Belanja:** {harga_str}\n📦 **Total Robux:** {total_robux:,} R$\n🧾 **Total Transaksi:** {total_transaksi}x\n\nMIPI STORE • CHECK SALDO"
+    embed.set_footer(text="Mipi Store • Rafi Store")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.command(name="saldo")
+async def saldo_prefix(ctx):
+    total_rp, total_robux, total_transaksi = get_total_belanja(ctx.author.id)
+    harga_str = f"Rp {total_rp:,}".replace(",", ".")
+    embed = discord.Embed(color=0xff1493)
+    embed.description = f"💳 **INFORMASI SALDO / TOTAL TRANSAKSI** ✨\n\nHalo {ctx.author.mention},\nberikut adalah rincian total transaksi atau saldo belanja kamu di **MIPI STORE:**\n\n💰 **Total Belanja:** {harga_str}\n📦 **Total Robux:** {total_robux:,} R$\n🧾 **Total Transaksi:** {total_transaksi}x\n\nMIPI STORE • CHECK SALDO"
+    embed.set_footer(text="Mipi Store • Rafi Store")
+    await ctx.send(embed=embed)
 
 @bot.tree.command(name="market-rules", description="Kirim aturan market")
 async def market_rules(interaction: discord.Interaction):
